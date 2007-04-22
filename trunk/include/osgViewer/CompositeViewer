@@ -1,0 +1,199 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGVIEWER_CompositeViewer
+#define OSGVIEWER_CompositeViewer 1
+
+#include <osgViewer/GraphicsWindow>
+#include <osgViewer/View>
+
+namespace osgViewer {
+
+/** CompsiteViewer holds a or more views to a one more scenes.*/
+class OSGVIEWER_EXPORT CompositeViewer : public osg::Referenced
+{
+    public:
+
+        CompositeViewer();
+        virtual ~CompositeViewer();
+
+        void addView(osgViewer::View* view);
+        
+        osgViewer::View* getView(unsigned i) { return _views[i].get(); }
+        const osgViewer::View* getView(unsigned i) const { return _views[i].get(); }
+        
+        unsigned int getNumViews() const { return _views.size(); }
+
+        
+        /** Get whether at least of one of this viewers windows are realized.*/
+        bool isRealized() const;
+
+        /** set up windows and associated threads.*/
+        void realize();
+
+        void setDone(bool done) { _done = done; }
+        
+        bool done() const { return _done; }
+        
+        void setStartTick(osg::Timer_t tick);
+        osg::Timer_t getStartTick() const { return _startTick; }
+
+        void setReferenceTime(double time=0.0);
+
+        osg::FrameStamp* getFrameStamp() { return _frameStamp.get(); }
+        const osg::FrameStamp* getFrameStamp() const { return _frameStamp.get(); }
+
+        enum ThreadingModel
+        {
+            SingleThreaded,
+            ThreadPerContext,
+            ThreadPerCamera
+        };
+        
+        /** Set the threading model the rendering traversals will use.*/
+        void setThreadingModel(ThreadingModel threadingModel);
+        
+        /** Get the threading model the rendering traversals will use.*/
+        ThreadingModel getThreadingModel() const { return _threadingModel; }
+
+        enum BarrierPosition
+        {
+            BeforeSwapBuffers,
+            AfterSwapBuffers
+        };
+        
+        /** Set the position of the end barrier.
+          * AfterSwapBuffers will may result is slightly higher framerates, by may
+          * lead to inconcistent swapping between different windows.
+          * BeforeSwapBuffers may lead to slightly lower framerate, but improve consistency in timing of swap buffers,
+          * especially important if you are likely to consistently break frame.*/
+        void setEndBarrierPosition(BarrierPosition bp);
+
+        /** Get the end barrier position.*/
+        BarrierPosition getEndBarrierPosition() const { return _endBarrierPosition; }
+
+        void setEventQueue(osgGA::EventQueue* eventQueue) { _eventQueue = eventQueue; }
+        osgGA::EventQueue* getEventQueue() { return _eventQueue.get(); }
+        const osgGA::EventQueue* getEventQueue() const { return _eventQueue.get(); }
+
+        /** Set the key event that the viewer checks on each frame to see if the viewer's done flag should be set to
+          * signal end of viewers main loop.
+          * Default value is Escape (osgGA::GUIEVentAdapter::KEY_Escape).
+          * Setting to 0 switches off the feature.*/
+        void setKeyEventSetsDone(int key) { _keyEventSetsDone = key; }
+
+        /** get the key event that the viewer checks on each frame to see if the viewer's done flag.*/
+        int getKeyEventSetsDone() const { return _keyEventSetsDone; }
+        
+        /** if the flag is true, the viewer set its done flag when a QUIT_APPLICATION is received, false disables this feature */
+        void setQuitEventSetsDone(bool flag) { _quitEventSetsDone = flag; }
+        
+        /** @return true if the viewer respond to the QUIT_APPLICATION-event */
+        bool getQuitEventSetsDone() const { return _quitEventSetsDone; }
+
+        /** Execute a main frame loop.
+          * Equivialant to while (!viewer.done()) viewer.frame();
+          * Also calls realize() if the viewer is not already realized,
+          * and installs trackball manipulator if one is not already assigned.
+          */
+        virtual int run();
+
+        /** Render a complete new frame.
+          * Calls advance(), eventTraversal(), updateTraversal(), renderingTraversals(). */
+        virtual void frame(double simulationTime=USE_REFERENCE_TIME);
+
+        virtual void advance(double simulationTime=USE_REFERENCE_TIME);
+
+        virtual void eventTraversal();
+
+        virtual void updateTraversal();
+        
+        virtual void renderingTraversals();
+
+        
+        void setCameraWithFocus(osg::Camera* camera);
+        osg::Camera* getCameraWithFocus() { return _cameraWithFocus.get(); }
+        const osg::Camera* getCameraWithFocus() const { return _cameraWithFocus.get(); }
+        
+        osgViewer::View* getViewWithFocus() { return _viewWithFocus.get(); }
+        const osgViewer::View* getViewWithFocus() const { return _viewWithFocus.get(); }
+        
+        typedef std::vector<osg::GraphicsContext*> Contexts;
+        void getContexts(Contexts& contexts, bool onlyValid=true);
+        
+        typedef std::vector<osgViewer::GraphicsWindow*> Windows;
+        void getWindows(Windows& windows, bool onlyValid=true);
+
+        typedef std::vector<osgViewer::Scene*> Scenes;
+        void getScenes(Scenes& scenes, bool onlyValid=true);
+
+
+        /** Set the graphics operation to call on realization of the viewers graphics windows.*/
+        void setRealizeOperation(osg::Operation* op) { _realizeOperation = op; }
+
+        /** Get the graphics operation to call on realization of the viewers graphics windows.*/
+        osg::Operation* getRealizeOperation() { return _realizeOperation.get(); }
+
+        /** Stop any threads begin run by viewer.*/
+        void stopThreading();
+
+        /** Start any threads required by the viewer, as per viewers ThreadingModel.*/
+        void startThreading();        
+
+        /** Set up the Operations to render the various viewer cameras on the viewers graphics windows.*/
+        void setUpRenderingSupport();
+
+
+    protected:
+
+        void init();
+        void checkWindowStatus();
+
+        typedef std::vector< osg::ref_ptr<osgViewer::View> > Views;
+        Views _views;
+       
+        bool _firstFrame;
+        
+        bool _done;
+        int _keyEventSetsDone;
+        bool _quitEventSetsDone;
+        
+        ThreadingModel _threadingModel;
+        BarrierPosition _endBarrierPosition;
+
+        osg::ref_ptr<osg::BarrierOperation> _startRenderingBarrier;
+        osg::ref_ptr<osg::BarrierOperation> _endRenderingDispatchBarrier;
+
+        unsigned int computeNumberOfThreadsIncludingMainRequired();
+
+        unsigned int _numThreadsOnBarrier;
+        
+        typedef std::map<osg::ref_ptr<osg::Camera>, osg::ref_ptr<osgUtil::SceneView> > CameraSceneViewMap;
+        CameraSceneViewMap _cameraSceneViewMap;
+
+        osg::Timer_t                        _startTick;
+        osg::ref_ptr<osg::FrameStamp>       _frameStamp;
+
+        osg::observer_ptr<osg::Camera>      _cameraWithFocus;
+        osg::observer_ptr<osgViewer::View>  _viewWithFocus;
+        
+        osg::ref_ptr<osgGA::EventQueue>     _eventQueue;
+        osg::ref_ptr<osgGA::EventVisitor>   _eventVisitor;
+
+        osg::ref_ptr<osg::Operation>        _realizeOperation;
+};
+
+
+}
+
+#endif

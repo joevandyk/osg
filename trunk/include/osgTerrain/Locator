@@ -1,0 +1,92 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGTERRAIN_LOCATOR
+#define OSGTERRAIN_LOCATOR 1
+
+#include <osg/Object>
+#include <osg/Vec3d>
+#include <osg/CoordinateSystemNode>
+
+#include <osgTerrain/Export>
+
+namespace osgTerrain {
+
+class OSGTERRAIN_EXPORT Locator : public osg::Object
+{
+    public:
+
+        Locator();
+
+        /** Copy constructor using CopyOp to manage deep vs shallow copy.*/
+        Locator(const Locator&,const osg::CopyOp& copyop=osg::CopyOp::SHALLOW_COPY);
+        
+        META_Object(osgTerrain, Locator);
+        
+        virtual bool convertLocalToModel(const osg::Vec3d& /*local*/, osg::Vec3d& /*world*/) const { return false; }
+        virtual bool convertModelToLocal(const osg::Vec3d& /*world*/, osg::Vec3d& /*local*/) const { return false; }
+
+        static bool convertLocalCoordBetween(const Locator& source, const osg::Vec3d& sourceNDC, 
+                                             const Locator& destination, osg::Vec3d& destinationNDC)
+        {
+            osg::Vec3d model;
+            if (!source.convertLocalToModel(sourceNDC, model)) return false;
+            if (!destination.convertModelToLocal(model, destinationNDC)) return false;
+            return true;
+        }
+        
+        bool computeLocalBounds(Locator& source, osg::Vec3d& bottomLeft, osg::Vec3d& topRight);
+
+    protected:
+
+        virtual ~Locator();
+        
+};
+
+class OSGTERRAIN_EXPORT EllipsoidLocator : public osgTerrain::Locator
+{
+public:
+    
+    
+    EllipsoidLocator(double longitude, double latitude, double deltaLongitude, double deltaLatitude, double height=0.0);
+
+    void setExtents(double longitude, double latitude, double deltaLongitude, double deltaLatitude, double height=0.0);
+
+    double getLongitude() const { return _longitude; }
+    double getDeltaLongitude() const { return _deltaLongitude; }
+
+    double getLatitude() const { return _latitude; }
+    double getDeltaLatitude() const { return _deltaLatitude; }
+    
+    double getHeight() const { return _height; }
+
+    osg::EllipsoidModel* getEllipsoidModel() { return _em.get(); }
+    const osg::EllipsoidModel* getEllipsoidModel() const { return _em.get(); }
+
+    bool convertLocalToModel(const osg::Vec3d& local, osg::Vec3d& world) const;
+    bool convertModelToLocal(const osg::Vec3d& world, osg::Vec3d& local) const;    
+
+protected:
+
+    osg::ref_ptr<osg::EllipsoidModel> _em;
+    
+    double _longitude;
+    double _latitude;
+    double _deltaLongitude;
+    double _deltaLatitude;
+    double _height;
+};
+
+}
+
+#endif

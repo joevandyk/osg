@@ -1,0 +1,78 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGVIEWER_SCENE
+#define OSGVIEWER_SCENE 1
+
+#include <osgUtil/UpdateVisitor>
+#include <osgGA/GUIEventHandler>
+#include <osgGA/EventVisitor>
+#include <osgDB/DatabasePager>
+
+#include <osgViewer/Export>
+
+#include <list>
+
+namespace osgViewer{
+
+/** Scene holds the highe level reference to a single scene graph.*/
+class OSGVIEWER_EXPORT Scene : public virtual osg::Referenced
+{
+    public:
+
+        Scene();
+        virtual ~Scene();
+
+        void setSceneData(osg::Node* node);
+        osg::Node* getSceneData();
+        const osg::Node* getSceneData() const;
+
+        void setFrameStamp(osg::FrameStamp* frameStamp);
+        osg::FrameStamp* getFrameStamp() { return _frameStamp.get(); }
+        const osg::FrameStamp* getFrameStamp() const { return _frameStamp.get(); }
+
+        void setDatabasePager(osgDB::DatabasePager* dp);
+        osgDB::DatabasePager* getDatabasePager() { return _databasePager.get(); }
+        const osgDB::DatabasePager* getDatabasePager() const { return _databasePager.get(); }
+
+        void setUpdateVisitor(osgUtil::UpdateVisitor* uv) { _updateVisitor = uv; }
+        osgUtil::UpdateVisitor* getUpdateVisitor() { return _updateVisitor.get(); }
+        const osgUtil::UpdateVisitor* getUpdateVisitor() const { return _updateVisitor.get(); }
+
+
+        virtual void frameAdvance();
+        
+        virtual void frameUpdateTraversal();
+
+
+
+    public:
+
+        void init();
+
+    protected:
+    
+        bool                                _firstFrame;
+        osg::ref_ptr<osg::FrameStamp>       _frameStamp;
+
+        osg::ref_ptr<osg::Node>             _sceneData;
+
+        osg::ref_ptr<osgUtil::UpdateVisitor>  _updateVisitor;
+
+        osg::ref_ptr<osgDB::DatabasePager>  _databasePager;
+};
+
+
+}
+
+#endif

@@ -1,0 +1,20 @@
+The OpenSceneGraph use the CMake build system to generate platform specific
+build environment.  CMake reads the CMakeLists.txt files that you'll find 
+throughout the OpenSceneGraph directories, check for installed dependnecies
+and then generate the appropriate build system.
+
+You can grab CMake from http://www.cmake.org, version 2.4.6 or later.
+
+Under unices (i.e. Linux, IRIX, Solaris, Free-BSD, HP-Ux, AIX, OSX) use the cmake or :
+ ccmake commandline utils:
+ 
+  cd OpenSceneGraph
+  ccmake .
+  make
+  sudo make install
+  
+Under Windows use the GUI tool CMakeSetup.
+
+For further details on compiliation, installation and platform specific information
+read "Getting Started" at http://www.openscenegraph.org, under 
+"Documentation".

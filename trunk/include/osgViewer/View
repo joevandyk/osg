@@ -1,0 +1,149 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGVIEWER_VIEW
+#define OSGVIEWER_VIEW 1
+
+#include <osg/View>
+
+#include <osgUtil/PolytopeIntersector>
+#include <osgUtil/LineSegmentIntersector>
+#include <osgUtil/SceneView>
+
+#include <osgGA/MatrixManipulator>
+#include <osgViewer/Scene>
+
+namespace osgViewer {
+
+class OSGVIEWER_EXPORT EndOfDynamicDrawBlock : public osg::State::DynamicObjectRenderingCompletedCallback
+{
+    public:
+    
+        EndOfDynamicDrawBlock(unsigned int);
+    
+        void completed(osg::State* state);
+
+        void block();
+        
+        void reset();
+
+        void release();
+
+        void setNumOfBlocks(unsigned int blockCount);
+
+    protected:
+
+        ~EndOfDynamicDrawBlock();
+
+        OpenThreads::Mutex _mut;
+        OpenThreads::Condition _cond;
+        unsigned int _numberOfBlocks;
+        unsigned int _blockCount;
+};
+
+
+/** View holds a single view on a scene, this view may be composed of one or more slave cameras.*/
+class OSGVIEWER_EXPORT View : public osg::View, public osgGA::GUIActionAdapter
+{
+    public:
+
+        View();
+
+        View(const osgViewer::View& view, const osg::CopyOp& copyop=osg::CopyOp::SHALLOW_COPY);
+
+        META_Object(osgViewer,View);
+
+        Scene* getScene() { return _scene.get(); }
+        const Scene* getScene() const { return _scene.get(); }
+
+        virtual void setSceneData(osg::Node* node);
+        osg::Node* getSceneData() { return _scene.valid() ? _scene->getSceneData() : 0; }
+        const osg::Node* getSceneData() const { return _scene.valid() ? _scene->getSceneData() : 0; }
+
+        void setEventQueue(osgGA::EventQueue* eventQueue) { _eventQueue = eventQueue; }
+        osgGA::EventQueue* getEventQueue() { return _eventQueue.get(); }
+        const osgGA::EventQueue* getEventQueue() const { return _eventQueue.get(); }
+
+        void setCameraManipulator(osgGA::MatrixManipulator* manipulator);
+        osgGA::MatrixManipulator* getCameraManipulator() { return _cameraManipulator.get(); }
+        const osgGA::MatrixManipulator* getCameraManipulator() const { return _cameraManipulator.get(); }
+
+        typedef std::list< osg::ref_ptr<osgGA::GUIEventHandler> > EventHandlers;
+        
+        void addEventHandler(osgGA::GUIEventHandler* eventHandler);
+        EventHandlers& getEventHandlers() { return _eventHandlers; }
+        const EventHandlers& getEventHandlers() const { return _eventHandlers; }
+        
+        
+        /** Set the DsplaySettings object associated with this view.*/
+        void setDisplaySettings(osg::DisplaySettings* ds) { _displaySettings = ds; }
+        
+        /** Set the DsplaySettings object associated with this view.*/
+        osg::DisplaySettings* getDisplaySettings() { return _displaySettings.get(); }
+        
+        /** Set the DsplaySettings object associated with this view.*/
+        const osg::DisplaySettings* getDisplaySettings() const { return _displaySettings.get(); }
+
+        
+        /** Convinience method for creating slave Cameras and associated GraphicsWindows across all screens.*/
+        void setUpViewAcrossAllScreens();
+
+        /** Convinience method for a single Camara associated with a single full screen GraphicsWindow.*/
+        void setUpViewOnSingleScreen(unsigned int screenNum=0);
+        
+        
+        /** Return true if this view contains a specified camera.*/
+        bool containsCamera(const osg::Camera* camera) const;
+        
+        /** Get the camera which contains the pointer position x,y specified master cameras window/eye coords.
+          * Also passes back the local window coords for the graphics context associated with the camera passed back. */
+        const osg::Camera* getCameraContainingPosition(float x, float y, float& local_x, float& local_y) const;
+        
+        /** Compute intersections between a ray through the specified master cameras window/eye coords and a specified node.
+          * Note, when a master cameras has slaves and no viewport itself its coordinate frame will be in clip space i.e. -1,-1 to 1,1,
+          * while if its has a viewport the coordintates will be relative to its viewport dimensions. 
+          * Mouse events handled by the view will automatically be attached into the master camera window/clip coords so can be passed
+          * directly on to the computeIntersections method. */
+        bool computeIntersections(float x,float y, osgUtil::LineSegmentIntersector::Intersections& intersections,osg::Node::NodeMask traversalMask = 0xffffffff);
+        
+        /** Compute intersections between a ray through the specified master cameras window/eye coords and a specified nodePath's subgraph. */
+        bool computeIntersections(float x,float y, osg::NodePath& nodePath, osgUtil::LineSegmentIntersector::Intersections& intersections,osg::Node::NodeMask traversalMask = 0xffffffff);
+        
+        
+        virtual void requestRedraw();
+        virtual void requestContinuousUpdate(bool needed=true);
+        virtual void requestWarpPointer(float x,float y);
+        
+        
+
+    public:
+        
+        void assignSceneDataToCameras();
+        void init();
+
+    protected:
+    
+
+        virtual ~View();
+
+        osg::ref_ptr<osgViewer::Scene>          _scene;
+        osg::ref_ptr<osgGA::EventQueue>         _eventQueue;
+        osg::ref_ptr<osgGA::MatrixManipulator>  _cameraManipulator;
+        EventHandlers                           _eventHandlers;
+    
+        osg::ref_ptr<osg::DisplaySettings>      _displaySettings;
+};
+
+}
+
+#endif

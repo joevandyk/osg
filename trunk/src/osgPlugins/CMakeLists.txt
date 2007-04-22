@@ -1,0 +1,149 @@
+#---------------------------------------------------
+# OSG CMAKE SUPPORT 
+# (C) by Michael Wagner, mtw@shared-reality.com 2005
+#---------------------------------------------------
+
+PROJECT(OSG_PLUGINS_MASTER)
+
+
+SET(LIBRARY_OUTPUT_PATH "${LIBRARY_OUTPUT_PATH}/osgPlugins")
+
+
+OPTION(BUILD_OSG_COMMON_PLUGINS "Build with Common  Plugins" TRUE)
+OPTION(BUILD_OSG_IMAGE_PLUGINS "Build with Imagege texture Plugins" TRUE)
+OPTION(BUILD_OSG_3D_PLUGINS "Build with 3D formats Plugins" TRUE)
+OPTION(BUILD_OSG_OTHER_PLUGINS "Build with other formats Plugins" TRUE)
+OPTION(BUILD_OSG_NET_PLUGINS "Build with net Plugin" TRUE)
+
+IF(NOT MINGW)
+	SET(CMAKE_SHARED_MODULE_PREFIX "")
+ENDIF(NOT MINGW)
+
+
+SET(TARGET_DEFAULT_PREFIX "osgdb_")
+SET(TARGET_DEFAULT_LABEL_PREFIX "Plugins")
+SET(TARGET_COMMON_LIBRARIES 
+	osg 
+	osgDB 
+	osgUtil
+)
+
+IF (BUILD_OSG_COMMON_PLUGINS)
+	SET(TARGET_DEFAULT_LABEL_PREFIX "Plug commons")
+###########################################################
+#  this is for asking the production of a single CMakeLists.txt
+#  the BUILD_CMAKELIST can be set at the macro call level or
+#  globally by configuring 
+#  TARGET_DEFAULT_BUILD_CMAKELIST
+#
+#	ADD_OSG_PLUGIN(osgFX osgFX BUILD_CMAKELIST)
+#
+###########################################################
+	ADD_SUBDIRECTORY(osgFX)
+	ADD_SUBDIRECTORY(osgParticle)
+	ADD_SUBDIRECTORY(osgSim)
+	ADD_SUBDIRECTORY(osgText)
+	ADD_SUBDIRECTORY(osgViewer)
+	ADD_SUBDIRECTORY(osgShadow)
+	ADD_SUBDIRECTORY(osga)
+	ADD_SUBDIRECTORY(rot)
+	ADD_SUBDIRECTORY(scale)
+	ADD_SUBDIRECTORY(trans)
+	
+	ADD_SUBDIRECTORY(osg)
+	ADD_SUBDIRECTORY(ive)
+ENDIF (BUILD_OSG_COMMON_PLUGINS)
+
+IF (BUILD_OSG_IMAGE_PLUGINS)
+	SET(TARGET_DEFAULT_LABEL_PREFIX "Plug image" )#
+	ADD_SUBDIRECTORY(rgb)
+	ADD_SUBDIRECTORY(bmp)
+	ADD_SUBDIRECTORY(dds)
+	ADD_SUBDIRECTORY(tga)
+	ADD_SUBDIRECTORY(hdr)
+	
+	IF(JPEG_FOUND)
+		ADD_SUBDIRECTORY(jpeg)
+	ENDIF(JPEG_FOUND)
+	IF(GIFLIB_FOUND)
+		ADD_SUBDIRECTORY(gif) 
+	ENDIF(GIFLIB_FOUND)
+	IF(PNG_FOUND)
+		ADD_SUBDIRECTORY(png)
+	ENDIF(PNG_FOUND)
+	IF(TIFF_FOUND)
+		ADD_SUBDIRECTORY(tiff)
+	ENDIF(TIFF_FOUND)
+
+ENDIF (BUILD_OSG_IMAGE_PLUGINS)
+
+IF (BUILD_OSG_3D_PLUGINS)
+	SET(TARGET_DEFAULT_LABEL_PREFIX "Plug 3d")
+	ADD_SUBDIRECTORY(3dc)
+	IF(INVENTOR_FOUND)
+		ADD_SUBDIRECTORY(Inventor)
+	ENDIF(INVENTOR_FOUND)
+	#ADD_SUBDIRECTORY(lwo)
+	ADD_SUBDIRECTORY(x)
+	ADD_SUBDIRECTORY(dw)
+	ADD_SUBDIRECTORY(dxf)
+	ADD_SUBDIRECTORY(OpenFlight)
+	ADD_SUBDIRECTORY(geo)
+	ADD_SUBDIRECTORY(obj)
+	#ADD_SUBDIRECTORY(pfb)
+	ADD_SUBDIRECTORY(pic)
+	ADD_SUBDIRECTORY(stl)
+	ADD_SUBDIRECTORY(3ds)
+	ADD_SUBDIRECTORY(ac)
+ENDIF (BUILD_OSG_3D_PLUGINS)
+
+IF (BUILD_OSG_OTHER_PLUGINS)
+	SET(TARGET_DEFAULT_LABEL_PREFIX "Plug other")
+	ADD_SUBDIRECTORY(logo)
+	ADD_SUBDIRECTORY(lws)
+	ADD_SUBDIRECTORY(md2)
+	ADD_SUBDIRECTORY(osgtgz)
+	ADD_SUBDIRECTORY(tgz)
+        
+        # comment out txp plugin till it compiles cleanly...
+	ADD_SUBDIRECTORY(txp)
+        
+	ADD_SUBDIRECTORY(shp)
+	ADD_SUBDIRECTORY(txf)
+
+	#ADD_SUBDIRECTORY(xine)
+
+        IF(QUICKTIME_FOUND)
+            ADD_SUBDIRECTORY(quicktime)
+        ENDIF(QUICKTIME_FOUND)
+        
+	IF(FREETYPE_FOUND)
+	    ADD_SUBDIRECTORY(freetype) 
+	ENDIF(FREETYPE_FOUND)
+	IF(ZLIB_FOUND)
+	    ADD_SUBDIRECTORY(zip)
+	ENDIF(ZLIB_FOUND)
+
+ENDIF (BUILD_OSG_OTHER_PLUGINS)
+
+
+#---------------------------------------------------
+# ADD ALL PLUGINS 
+#---------------------------------------------------
+
+IF (BUILD_OSG_NET_PLUGINS)
+	ADD_SUBDIRECTORY(net)
+ENDIF (BUILD_OSG_NET_PLUGINS)
+
+#REWRITE_CMAKELIST(ADD_OSG_PLUGIN)
+
+
+##########to get all the variables of Cmake
+#GET_CMAKE_PROPERTY(MYVARS VARIABLES)
+#FOREACH(myvar ${MYVARS})
+#	FILE(APPEND ${CMAKE_CURRENT_BINARY_DIR}/AllVariables.txt
+#		"${myvar} -->${${myvar}}<-\n"
+#	)
+#ENDFOREACH(myvar)
+
+	

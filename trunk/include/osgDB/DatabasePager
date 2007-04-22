@@ -1,0 +1,370 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGDB_DATABASEPAGER
+#define OSGDB_DATABASEPAGER 1
+
+#include <osg/NodeVisitor>
+#include <osg/Group>
+#include <osg/PagedLOD>
+#include <osg/Drawable>
+#include <osg/GraphicsThread>
+
+#include <OpenThreads/Thread>
+#include <OpenThreads/Mutex>
+#include <OpenThreads/ScopedLock>
+#include <OpenThreads/Condition>
+
+#include <osgDB/SharedStateManager>
+#include <osgDB/ReaderWriter>
+#include <osgDB/Export>
+
+#include <map>
+#include <list>
+
+namespace osgDB {
+
+
+/** Database paging class which manages the loading of files in a background thread, 
+  * and syncronizing of loaded models with the main scene graph.*/
+class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandler, public OpenThreads::Thread
+{
+    public :
+
+        typedef OpenThreads::Thread::ThreadPriority ThreadPriority;
+
+        DatabasePager();
+
+        /** Add a request to load a node file to end the the database request list.*/
+        virtual void requestNodeFile(const std::string& fileName,osg::Group* group,
+                                     float priority, const osg::FrameStamp* framestamp);
+
+        virtual void requestNodeFile(const std::string& fileName,osg::Group* group,
+                                     float priority, const osg::FrameStamp* framestamp,
+                                     ReaderWriter::Options* loadOptions);
+
+        /** Run does the database paging.*/        
+        virtual void run();
+        
+        /** Cancel the database pager thread.*/        
+        virtual int cancel();
+        
+        /** Clear all internally cached structures.*/
+        virtual void clear();
+        
+        /** Set whether the database pager thread should be paused or not.*/
+        void setDatabasePagerThreadPause(bool pause);
+        
+        /** Get whether the database pager thread should is paused or not.*/
+        bool getDatabasePagerThreadPause() const { return _databasePagerThreadPaused; }
+        
+        /** Set whether new database request calls are accepted or ignored.*/
+        void setAcceptNewDatabaseRequests(bool acceptNewRequests) { _acceptNewRequests = acceptNewRequests; }
+        
+        /** Get whether new database request calls are accepted or ignored.*/
+        bool getAcceptNewDatabaseRequests() const { return _acceptNewRequests; }
+        
+        /** Set the use of the frame block which, if enabled, blocks the DatabasePager 
+          * from executing which the current frame is being drawn.  
+          * When a single processor machine is being used it can be useful to block on
+          * frame to help prevent the database paging thread from slowing the cull and draw
+          * traversals which in turn can cause frame drops.*/
+        void setUseFrameBlock(bool useFrameBlock) { _useFrameBlock = useFrameBlock; }
+        
+        /** Get the whether UseFrameBlock is on or off.*/
+        bool getUseFrameBlock() const { return _useFrameBlock; }
+        
+        osg::RefBlock* getFrameBlock() { return _frameBlock.get(); }
+
+        /** Set the priority of the database pager thread during the frame (i.e. while cull and draw are running.)*/
+        void setThreadPriorityDuringFrame(ThreadPriority duringFrame) { _threadPriorityDuringFrame = duringFrame; }
+
+        /** Get the priority of the database pager thread during the frame*/
+        ThreadPriority getThreadPriorityDuringFrame() const { return _threadPriorityDuringFrame; }
+        
+        /** Set the priority of the database pager thread when the frame is not being exectuted (i.e. before or after cull and draw have run.)*/
+        void setThreadPriorityOutwithFrame(ThreadPriority outwithFrame)  { _threadPriorityOutwithFrame = outwithFrame; }
+
+        /** Get the priority of the database pager thread when the frame is not being exectuted.*/
+        ThreadPriority getThreadPriorityOutwithFrame() const { return _threadPriorityOutwithFrame; }
+        
+        
+        /** Get the number of frames that are currently active.*/
+        int getNumFramesActive() const { return _numFramesActive; }
+
+        /** Signal the database thread that the update, cull and draw has begun for a new frame.
+          * Note, this is called by the application so that the database pager can go to sleep while the CPU is busy on the main rendering threads. */
+        virtual void signalBeginFrame(const osg::FrameStamp* framestamp);
+        
+        /** Signal the database thread that the update, cull and draw dispatch has completed.
+          * Note, this is called by the application so that the database pager can go to wake back up now the main rendering threads are iddle waiting for the next frame.*/
+        virtual void signalEndFrame();
+        
+
+        /** Find all PagedLOD nodes in a subgraph and register them with 
+          * the DatabasePager so it can keep track of expired nodes.
+          * note, should be only be called from the update thread. */
+        virtual void registerPagedLODs(osg::Node* subgraph);
+
+        /** Set whether the database pager should pre compile OpenGL objects before allowing
+          * them to be merged into the scene graph.
+          * Pre compilation helps reduce the chances of frame drops, but also slows the
+          * speed at which tiles are merged as they have to be compiled first.*/
+        void setDoPreCompile(bool flag) { _doPreCompile = flag; }
+
+        /** Get whether the database pager should pre compile OpenGL objects before allowing
+          * them to be merged into the scene graph.*/
+        bool getDoPreCompile() const { return _doPreCompile; }
+
+
+        /** Set the target frame rate that the DatabasePager should assume.
+          * Typically one would set this to the value refresh rate of your display system i.e. 60Hz.
+          * Default value is 100.
+          * Usage notes.  The TargetFrameRate and the MinimumTimeAvailableForGLCompileAndDeletePerFrame
+          * parameters are not directly used by DatabasePager, but are should be used as a guide for how
+          * long to set aside per frame for compiling and deleting OpenGL objects - ie. the value to use 
+          * when calling DatabasePager::compileGLObjectgs(state,availableTime,). The longer amount of
+          * time to set aside  cthe faster databases will be paged in but with increased chance of frame drops,
+          * the lower the amount of time the set aside the slower databases will paged it but with better
+          * chance of avoid any frame drops.  The default values are chosen to achieve the later when running
+          * on a modern mid to high end  PC. 
+          * The way to compute the amount of available time use a scheme such as :
+          *    availableTime = maximum(1.0/targetFrameRate - timeTakenDuringUpdateCullAndDraw, minimumTimeAvailableForGLCompileAndDeletePerFrame). 
+          */
+        void setTargetFrameRate(double tfr) { _targetFrameRate = tfr; }
+
+        /** Get the target frame rate that the DatabasePager should assume.*/
+        double getTargetFrameRate() const { return _targetFrameRate; }
+        
+        /** Set the minimum amount of time (in seconds) that should be made available for compiling and delete OpenGL objects per frame.
+          * Default value is 0.001 (1 millisecond). 
+          * For usage see notes in setTargetFrameRate.*/
+        void setMinimumTimeAvailableForGLCompileAndDeletePerFrame(double ta) { _minimumTimeAvailableForGLCompileAndDeletePerFrame = ta; }
+
+        /** Get the minimum amount of time that should be made available for compiling and delete OpenGL objects per frame.
+          * For usage see notes in setTargetFrameRate.*/
+        double getMinimumTimeAvailableForGLCompileAndDeletePerFrame() const { return _minimumTimeAvailableForGLCompileAndDeletePerFrame; }
+
+        /** Set the maximum number of OpenGL objects that the page should attempt to compile per frame.
+          * Note, Lower values reduces chances of a frame drop but lower the rate that database will be paged in at.
+          * Default value is 8. */
+        void setMaximumNumOfObjectsToCompilePerFrame(unsigned int num) { _maximumNumOfObjectsToCompilePerFrame = num; }
+
+        /** Get the maximum number of OpenGL objects that the page should attempt to compile per frame.*/
+        unsigned int getMaximumNumOfObjectsToCompilePerFrame() const { return _maximumNumOfObjectsToCompilePerFrame; }
+
+
+        /** Set the amount of time that a subgraph will be kept without being visited in the cull traversal
+          * before being removed.*/
+        void setExpiryDelay(double expiryDelay) { _expiryDelay = expiryDelay; }
+        
+        /** Get the amount of time that a subgraph will be kept without being visited in the cull traversal
+          * before being removed.*/
+        double getExpiryDelay() const { return _expiryDelay; }
+
+        /** Set whether the removed subgraphs should be deleted in the database thread or not.*/
+        void setDeleteRemovedSubgraphsInDatabaseThread(bool flag) { _deleteRemovedSubgraphsInDatabaseThread = flag; }
+        
+        /** Get whether the removed subgraphs should be deleted in the database thread or not.*/
+        bool getDeleteRemovedSubgraphsInDatabaseThread() const { return _deleteRemovedSubgraphsInDatabaseThread; }
+
+        enum DrawablePolicy
+        {
+            DO_NOT_MODIFY_DRAWABLE_SETTINGS,
+            USE_DISPLAY_LISTS,
+            USE_VERTEX_BUFFER_OBJECTS,
+            USE_VERTEX_ARRAYS
+        };
+
+        /** Set how loaded drawables should be handled w.r.t their display list/vertex buffer object/vertex array settings.*/
+        void setDrawablePolicy(DrawablePolicy policy) { _drawablePolicy = policy; }
+
+        /** Get how loaded drawables should be handled w.r.t their display list/vertex buffer object/vertex array settings.*/
+        DrawablePolicy getDrawablePolicy() const { return _drawablePolicy; }
+
+
+        /** Set whether newly loaded textures should have their UnrefImageDataAfterApply set to a specified value.*/
+        void setUnrefImageDataAfterApplyPolicy(bool changeAutoUnRef, bool valueAutoUnRef) { _changeAutoUnRef = changeAutoUnRef; _valueAutoUnRef = valueAutoUnRef; }
+
+        /** Get whether newly loaded textures should have their UnrefImageDataAfterApply set to a specified value.*/
+        void getUnrefImageDataAfterApplyPolicy(bool& changeAutoUnRef, bool& valueAutoUnRef) const { changeAutoUnRef = _changeAutoUnRef; valueAutoUnRef = _valueAutoUnRef; }
+
+
+        /** Set whether newly loaded textures should have their MaxAnisotopy set to a specified value.*/
+        void setMaxAnisotropyPolicy(bool changeAnisotropy, float valueAnisotropy) { _changeAnisotropy = changeAnisotropy; _valueAnisotropy = valueAnisotropy; }
+
+        /** Set whether newly loaded textures should have their MaxAnisotopy set to a specified value.*/
+        void getMaxAnisotropyPolicy(bool& changeAnisotropy, float& valueAnisotropy) const { changeAnisotropy = _changeAnisotropy; valueAnisotropy = _valueAnisotropy; }
+
+
+        /** Return true if there are pending updates to the scene graph that require a call to updateSceneGraph(double). */
+        bool requiresUpdateSceneGraph() const;
+        
+        /** Merge the changes to the scene graph by calling calling removeExpiredSubgraphs then addLoadedDataToSceneGraph.
+          * Note, must only be called from single thread update phase. */
+        virtual void updateSceneGraph(double currentFrameTime)
+        {
+            removeExpiredSubgraphs(currentFrameTime);
+            addLoadedDataToSceneGraph(currentFrameTime);
+        }
+        
+        
+        /** Turn the compilation of rendering objects for specfied graphics context on (true) or off(false). */
+        void setCompileGLObjectsForContextID(unsigned int contextID, bool on);
+        
+        /** Get whether the compilation of rendering objects for specfied graphics context on (true) or off(false). */
+        bool getCompileGLObjectsForContextID(unsigned int contextID);
+
+        /** Return true if there are pending compile operations that are required.
+          * If requiresCompileGLObjects() return true the application should call compileGLObjects() .*/
+        bool requiresCompileGLObjects() const;
+
+        /** Compile the rendering objects (display lists,texture objects, VBO's) on loaded subgraph.
+          * note, should only be called from the draw thread.
+          * Note, must only be called from a valid graphics context. */
+        virtual void compileGLObjects(osg::State& state,double& availableTime);
+        
+        /** Report how many items are in the _fileRequestList queue */
+        unsigned int getFileRequestListSize() const { return _fileRequestList.size(); }
+
+        /** Report how many items are in the _dataToCompileList queue */
+        unsigned int getDataToCompileListSize() const { return _dataToCompileList.size(); }
+
+
+        typedef std::list< osg::ref_ptr<osg::PagedLOD> >   PagedLODList;
+        typedef std::set< osg::ref_ptr<osg::StateSet> >    StateSetList;
+        typedef std::vector< osg::ref_ptr<osg::Drawable> > DrawableList;
+        typedef std::pair<StateSetList,DrawableList>       DataToCompile;
+        typedef std::map< unsigned int, DataToCompile >    DataToCompileMap; 
+        typedef std::set<unsigned int>                     ActiveGraphicsContexts;
+
+    protected:
+
+        virtual ~DatabasePager();
+
+
+        friend struct DatabaseRequest;
+        
+        struct DatabaseRequest : public osg::Referenced
+        {
+            DatabaseRequest():
+                _numOfRequests(0)
+            {}
+            
+            std::string                 _fileName;
+            int                         _frameNumberFirstRequest;
+            double                      _timestampFirstRequest;
+            float                       _priorityFirstRequest;
+            int                         _frameNumberLastRequest;
+            double                      _timestampLastRequest;
+            float                       _priorityLastRequest;
+            unsigned int                _numOfRequests;
+            osg::ref_ptr<osg::Group>    _groupForAddingLoadedSubgraph;
+            osg::ref_ptr<osg::Node>     _loadedModel;
+            DataToCompileMap            _dataToCompileMap;
+            osg::ref_ptr<ReaderWriter::Options> _loadOptions;
+        };
+        
+        typedef std::vector< osg::ref_ptr<DatabaseRequest> > DatabaseRequestList;
+        typedef std::vector<  osg::ref_ptr<osg::Object> > ObjectList;
+
+        // forward declare inner helper classes
+        class FindCompileableGLObjectsVisitor;
+        friend class FindCompileableGLObjectsVisitor;
+        
+        class FindPagedLODsVisitor;
+        friend class FindPagedLODsVisitor;
+
+        struct SortFileRequestFunctor;
+        friend struct SortFileRequestFunctor;
+
+        
+        OpenThreads::Mutex              _run_mutex;
+        bool                            _startThreadCalled;
+
+        
+        osg::ref_ptr<osg::RefBlock>    _databasePagerThreadBlock;
+
+        inline void updateDatabasePagerThreadBlock()
+        {
+            _databasePagerThreadBlock->set(
+                (!_fileRequestList.empty() || !_childrenToDeleteList.empty()) && !_databasePagerThreadPaused);
+        }
+        
+        inline void updateFrameBlock(int delta)
+        {
+            OpenThreads::ScopedLock<OpenThreads::Mutex> lock(_numFramesActiveMutex);
+            _numFramesActive += delta;
+            _frameBlock->set(_numFramesActive==0);
+        }
+
+
+        /** Iterate through the active PagedLOD nodes children removing 
+          * children which havn't been visited since specified expiryTime.
+          * note, should be only be called from the update thread. */
+        virtual void removeExpiredSubgraphs(double currentFrameTime);
+
+        /** Add the loaded data to the scene graph.*/
+        void addLoadedDataToSceneGraph(double currentFrameTime);
+
+
+        bool                            _done;
+        bool                            _acceptNewRequests;
+        bool                            _databasePagerThreadPaused;
+    
+        bool                            _useFrameBlock;
+        int                             _numFramesActive;
+        mutable OpenThreads::Mutex      _numFramesActiveMutex;
+        osg::ref_ptr<osg::RefBlock>     _frameBlock;
+        int                             _frameNumber;
+
+        ThreadPriority                  _threadPriorityDuringFrame;
+        ThreadPriority                  _threadPriorityOutwithFrame;
+
+        DatabaseRequestList             _fileRequestList;
+        mutable OpenThreads::Mutex      _fileRequestListMutex;
+        
+        DatabaseRequestList             _dataToCompileList;
+        mutable OpenThreads::Mutex      _dataToCompileListMutex;
+
+        DrawablePolicy                  _drawablePolicy;
+
+        bool                            _changeAutoUnRef;
+        bool                            _valueAutoUnRef;
+        bool                            _changeAnisotropy;
+        float                           _valueAnisotropy;
+
+        bool                            _deleteRemovedSubgraphsInDatabaseThread;
+        ObjectList                      _childrenToDeleteList;
+        mutable OpenThreads::Mutex      _childrenToDeleteListMutex;
+
+        DatabaseRequestList             _dataToMergeList;
+        mutable OpenThreads::Mutex      _dataToMergeListMutex;
+        
+        
+        PagedLODList                    _activePagedLODList;
+        PagedLODList                    _inactivePagedLODList;
+        
+        double                          _expiryDelay;
+
+        ActiveGraphicsContexts          _activeGraphicsContexts;
+        
+        bool                            _doPreCompile;
+        double                          _targetFrameRate;
+        double                          _minimumTimeAvailableForGLCompileAndDeletePerFrame;
+        unsigned int                    _maximumNumOfObjectsToCompilePerFrame;
+};
+
+}
+
+#endif

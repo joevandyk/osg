@@ -1,0 +1,89 @@
+
+# FIXME: For OS X, need flag for Framework or dylib
+IF   (DYNAMIC_OPENSCENEGRAPH)
+	ADD_DEFINITIONS(-DOSGVIEWER_LIBRARY)
+ELSE (DYNAMIC_OPENSCENEGRAPH)
+	ADD_DEFINITIONS(-DOSG_LIBRARY_STATIC)
+ENDIF(DYNAMIC_OPENSCENEGRAPH)
+
+SET(LIB_NAME osgViewer)
+SET(HEADER_PATH ${OpenSceneGraph_SOURCE_DIR}/include/${LIB_NAME})
+SET(LIB_PUBLIC_HEADERS
+	${HEADER_PATH}/CompositeViewer
+	${HEADER_PATH}/Export
+	${HEADER_PATH}/GraphicsWindow
+	${HEADER_PATH}/HelpHandler
+	${HEADER_PATH}/Scene
+	${HEADER_PATH}/SimpleViewer
+	${HEADER_PATH}/StatsHandler
+	${HEADER_PATH}/Version
+	${HEADER_PATH}/View
+	${HEADER_PATH}/Viewer
+)
+
+SET(LIB_PRIVATE_HEADERS
+	${HEADER_PATH}/api/Carbon/GraphicsWindowCarbon
+	${HEADER_PATH}/api/Win32/GraphicsWindowWin32
+	${HEADER_PATH}/api/X11/GraphicsWindowX11
+)
+
+SET(LIB_COMMON_FILES
+	CompositeViewer.cpp
+	Scene.cpp
+	SimpleViewer.cpp
+	StatsHandler.cpp
+	HelpHandler.cpp
+	Version.cpp
+	View.cpp
+	Viewer.cpp
+)
+
+
+IF(WIN32)
+	ADD_LIBRARY(${LIB_NAME}
+		${OPENSCENEGRAPH_USER_DEFINED_DYNAMIC_OR_STATIC}
+		${LIB_PUBLIC_HEADERS}
+		${LIB_PRIVATE_HEADERS}
+		${LIB_COMMON_FILES}
+		GraphicsWindowWin32.cpp
+	)
+ELSE(WIN32)
+	IF(APPLE)
+		# FIXME: OS X needs selection mechanism for Cocoa, Carbon, X11
+		ADD_LIBRARY(${LIB_NAME}
+			${OPENSCENEGRAPH_USER_DEFINED_DYNAMIC_OR_STATIC}
+			${LIB_PUBLIC_HEADERS}
+			${LIB_PRIVATE_HEADERS}
+			${LIB_COMMON_FILES}
+			GraphicsWindowCarbon.cpp
+		)
+	ELSE(APPLE)
+		# X11 for everybody else
+		ADD_LIBRARY(${LIB_NAME}
+			${OPENSCENEGRAPH_USER_DEFINED_DYNAMIC_OR_STATIC}
+			${LIB_PUBLIC_HEADERS}
+			${LIB_PRIVATE_HEADERS}
+			${LIB_COMMON_FILES}
+			GraphicsWindowX11.cpp
+		)
+	ENDIF(APPLE)
+ENDIF(WIN32)
+
+	
+
+LINK_INTERNAL(${LIB_NAME} 	
+	osgGA
+	osgText
+	osgDB
+	osgUtil
+	osg
+)
+
+LINK_CORELIB_DEFAULT(${LIB_NAME})
+
+IF(MINGW OR CYGWIN)
+    LINK_EXTERNAL(${LIB_NAME} gdi32 )
+ENDIF(MINGW OR CYGWIN)
+
+
+INCLUDE(ModuleInstall OPTIONAL)

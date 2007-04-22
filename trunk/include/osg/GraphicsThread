@@ -1,0 +1,170 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield
+ *
+ * This library is open source and may be redistributed and/or modified under
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSG_GRAPHICSTHREAD
+#define OSG_GRAPHICSTHREAD 1
+
+#include <osg/observer_ptr>
+#include <osg/Object>
+
+#include <OpenThreads/Thread>
+#include <OpenThreads/Barrier>
+#include <OpenThreads/Condition>
+#include <OpenThreads/Block>
+
+#include <list>
+
+namespace osg {
+
+class RefBlock: virtual public osg::Referenced, public OpenThreads::Block
+{
+    public:
+
+        RefBlock() {}
+
+};
+
+/** Base class for implementing graphics operations.*/
+struct Operation : virtual public Referenced
+{
+    Operation(const std::string& name, bool keep):
+        _name(name),
+        _keep(keep) {}
+        
+    virtual ~Operation() {}
+
+    /** Set the human readable name of the operation.*/
+    void setName(const std::string& name) { _name = name; }
+
+    /** Get the human readable name of the operation.*/
+    const std::string& getName() const { return _name; }
+
+    /** Set whether the operation should be kept once its been applied.*/ 
+    void setKeep(bool keep) { _keep = keep; }
+
+    /** Get whether the operation should be kept once its been applied.*/ 
+    bool getKeep() const { return _keep; }
+
+    /** if this operation is a barrier then release it.*/
+    virtual void release() {}
+
+    /** Do the actual task of this operation.*/ 
+    virtual void operator () (Object*) = 0;
+
+    std::string _name;
+    bool        _keep;
+};
+
+/** GraphicsThread is a helper class for running OpenGL GraphicsOperation within a single thread assigned to a specific GraphicsContext.*/
+class OSG_EXPORT OperationsThread : public Referenced, public OpenThreads::Thread
+{
+    public:
+        OperationsThread();
+
+        void setParent(Object* parent) { _parent = parent; }
+
+        Object* getParent() { return _parent.get(); }
+        
+        const Object* getParent() const { return _parent.get(); }
+
+        
+        /** Add operation to end of OperationQueue, this will be 
+          * executed by the graphics thread once this operation gets to the head of the queue.*/
+        void add(Operation* operation, bool waitForCompletion=false);
+        
+        /** Remove operation from OperationQueue.*/
+        void remove(Operation* operation);
+
+        /** Remove named operation from OperationQueue.*/
+        void remove(const std::string& name);
+
+        /** Remove all operations from OperationQueue.*/
+        void removeAllOperations();
+        
+        /** Get the operation currently being run.*/
+        osg::ref_ptr<Operation> getCurrentOperation() { return _currentOperation; }
+
+        /** Run does the graphics thread run loop.*/        
+        virtual void run();
+        
+        void setDone(bool done);
+        
+        bool getDone() const { return _done; }
+
+        /** Cancel this graphics thread.*/        
+        virtual int cancel();
+
+    protected:
+    
+        virtual ~OperationsThread();
+        
+        observer_ptr<Object>   _parent;
+
+        typedef std::list< ref_ptr<Operation> > OperationQueue;
+
+        bool                        _done;
+
+        OpenThreads::Mutex          _operationsMutex;
+        osg::ref_ptr<osg::RefBlock> _operationsBlock;
+        OperationQueue              _operations;
+        osg::ref_ptr<Operation>     _currentOperation;
+
+};
+
+
+/** SwapBufferOperation calls swap buffers on the GraphicsContext.*/
+struct OSG_EXPORT SwapBuffersOperation : public Operation
+{
+    SwapBuffersOperation():
+        Operation("SwapBuffers",true) {}
+
+    virtual void operator () (Object* context);
+};
+
+/** BarrierOperation allows one to syncronize multiple GraphicsThreads with each other.*/
+struct OSG_EXPORT BarrierOperation : public Operation, public OpenThreads::Barrier
+{
+    enum PreBlockOp
+    {
+        NO_OPERATION,
+        GL_FLUSH,
+        GL_FINISH
+    };
+
+    BarrierOperation(int numThreads, PreBlockOp op=NO_OPERATION):
+        Operation("Barrier", true),
+        OpenThreads::Barrier(numThreads),
+        _preBlockOp(op) {}
+
+    virtual void release();
+
+    virtual void operator () (Object* context);
+    
+    PreBlockOp _preBlockOp;
+};
+
+/** ReleaseContext_Block_MakeCurrentOperation releases the context for another thread to aquire, 
+  * then blocks waiting for context to be released, once the block is release the context is re-aqquired.*/
+struct OSG_EXPORT ReleaseContext_Block_MakeCurrentOperation : public Operation, public RefBlock
+{
+    ReleaseContext_Block_MakeCurrentOperation():
+        Operation("ReleaseContext_Block_MakeCurrent", false) {}
+
+    virtual void release();
+
+    virtual void operator () (Object* context);
+};
+
+}
+
+#endif

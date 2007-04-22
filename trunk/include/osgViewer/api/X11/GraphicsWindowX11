@@ -1,0 +1,175 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+/* Note, elements of GraphicsWindowX11 have used Prodcer/RenderSurface_X11.cpp as both
+ * a guide to use of X11/GLX and copiying directly in the case of setBorder().
+ * These elements are license under OSGPL as above, with Copyright (C) 2001-2004  Don Burns.
+ */
+
+#ifndef OSGVIEWER_GRAPHICSWINDOWX11
+#define OSGVIEWER_GRAPHICSWINDOWX11 1
+
+#include <osgViewer/GraphicsWindow>
+
+#define GLX_GLXEXT_PROTOTYPES  1
+
+#include <X11/X.h>
+#include <GL/glx.h>
+
+namespace osgViewer
+{
+
+class GraphicsWindowX11 : public osgViewer::GraphicsWindow
+{
+    public:
+
+        GraphicsWindowX11(osg::GraphicsContext::Traits* traits):
+            _valid(false),
+            _display(0),
+            _eventDisplay(0),
+            _parent(0),
+            _window(0),
+            _visualInfo(0),
+            _glxContext(0),
+            _defaultCursor(0),
+            _nullCursor(0),
+            _currentCursor(0),
+            _initialized(false),
+            _realized(false),
+            _timeOfLastCheckEvents(-1.0)
+        {
+            _traits = traits;
+
+            init();
+            
+            if (valid())
+            {
+                setState( new osg::State );
+                getState()->setGraphicsContext(this);
+
+                if (_traits.valid() && _traits->sharedContext)
+                {
+                    getState()->setContextID( _traits->sharedContext->getState()->getContextID() );
+                    incrementContextIDUsageCount( getState()->getContextID() );   
+                }
+                else
+                {
+                    getState()->setContextID( osg::GraphicsContext::createNewContextID() );
+                }
+
+            }
+        }
+    
+        virtual bool valid() const { return _valid; }
+
+        /** Realise the GraphicsContext.*/
+        virtual bool realizeImplementation();
+
+        /** Return true if the graphics context has been realised and is ready to use.*/
+        virtual bool isRealizedImplementation() const { return _realized; }
+
+        /** Close the graphics context.*/
+        virtual void closeImplementation();
+
+        /** Make this graphics context current.*/
+        virtual bool makeCurrentImplementation();
+
+        /** Release the graphics context.*/
+        virtual bool releaseContextImplementation();
+
+        /** Swap the front and back buffers.*/
+        virtual void swapBuffersImplementation();
+        
+        /** Check to see if any events have been generated.*/
+        virtual void checkEvents();
+
+        /** Set Window decoration.*/
+        virtual void setWindowDecoration(bool flag);
+
+        /** Get focus.*/
+        virtual void grabFocus();
+        
+        /** Get focus on if the pointer is in this window.*/
+        virtual void grabFocusIfPointerInWindow();
+
+        // Override from GUIActionAdapter
+        virtual void requestWarpPointer(float x,float y);
+
+        /** Set the window's position and size.*/
+        virtual void setWindowRectangle(int x, int y, int width, int height);
+
+        /** Switch on/off the cursor.*/
+        virtual void useCursor(bool cursorOn);
+        
+        /** WindowData is used to pass in the X11 window handle attached the GraphicsContext::Traits structure. */
+        struct WindowData : public osg::Referenced
+        {
+            WindowData(Window window):
+                _window(window) {}
+                
+            Window          _window;
+        };
+
+    public:
+    
+        // X11 specific aces functions
+
+        Display* getDisplay() const { return _display; }
+        Display* getEventDisplay() const { return _eventDisplay; }
+        Display* getDisplayToUse() const ;
+        
+        
+        Window& getParent() { return _parent; }
+        Window& getWindow() { return _window; }
+        GLXContext& getGLXContext() { return _glxContext; }
+
+        Cursor& getDefaultCursor() { return _defaultCursor; }
+        Cursor& getNullCursor() { return _nullCursor; }
+        Cursor& getCurrentCursor() { return _nullCursor; }
+        
+        
+
+    protected:
+    
+        ~GraphicsWindowX11();
+    
+        bool createVisualInfo();
+        
+        void init();
+
+        void transformMouseXY(float& x, float& y);
+        void adaptKey(XKeyEvent& keyevent, int& keySymbol, unsigned int& modifierMask);
+        
+        bool            _valid;
+        Display*        _display;
+        Display*        _eventDisplay;
+        Window          _parent;
+        Window          _window;
+        XVisualInfo*    _visualInfo;
+        GLXContext      _glxContext;
+
+        Cursor          _defaultCursor;
+        Cursor          _nullCursor;     
+        Cursor          _currentCursor;
+
+        Atom            _deleteWindow;
+        
+        bool            _initialized;
+        bool            _realized;
+
+        double          _timeOfLastCheckEvents;
+};
+
+}
+
+#endif

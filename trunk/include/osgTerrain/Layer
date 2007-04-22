@@ -1,0 +1,183 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield 
+ *
+ * This library is open source and may be redistributed and/or modified under  
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * OpenSceneGraph Public License for more details.
+*/
+
+#ifndef OSGTERRAIN_LAYER
+#define OSGTERRAIN_LAYER 1
+
+#include <osg/Image>
+#include <osg/Shape>
+#include <osg/Array>
+
+#include <osgTerrain/Locator>
+
+namespace osgTerrain {
+
+class OSGTERRAIN_EXPORT Layer : public osg::Object
+{
+    public:
+
+        Layer();
+
+        /** Copy constructor using CopyOp to manage deep vs shallow copy.*/
+        Layer(const Layer&,const osg::CopyOp& copyop=osg::CopyOp::SHALLOW_COPY);
+        
+        META_Object(osgTerrain, Layer);
+        
+        
+        void setLocator(Locator* locator) { _locator = locator; }
+        Locator* getLocator() { return _locator.get(); }
+        const Locator* getLocator() const { return _locator.get(); }
+
+        virtual unsigned int getNumColumns() const { return 0; }
+        virtual unsigned int getNumRows() const { return 0; }
+
+        void setDefaultValue(const osg::Vec4& value) { _defaultValue = value; }
+        const osg::Vec4& getDefaultValue() const { return _defaultValue; }
+
+        virtual bool getValue(unsigned int /*i*/, unsigned int /*j*/, float& /*value*/) const { return false; }
+        virtual bool getValue(unsigned int /*i*/, unsigned int /*j*/, osg::Vec2& /*value*/) const { return false; }
+        virtual bool getValue(unsigned int /*i*/, unsigned int /*j*/, osg::Vec3& /*value*/) const { return false; }
+        virtual bool getValue(unsigned int /*i*/, unsigned int /*j*/, osg::Vec4& /*value*/) const { return false; }
+
+        inline void computeIndices(double ndc_x, double ndc_y, unsigned int& i, unsigned int& j, double& ir, double& jr)
+        {
+            ndc_x *= double(getNumColumns()-1);
+            ndc_y *= double(getNumRows()-1);
+            i = (unsigned int)(ndc_x);
+            j = (unsigned int)(ndc_y);
+            ir = ndc_x - double(i);
+            jr = ndc_y - double(j);
+        } 
+
+
+        inline bool getInterpolatedValue(double ndc_x, double ndc_y, float& value)
+        {
+            unsigned int i,j;
+            double ir, jr;
+            computeIndices(ndc_x, ndc_y, i, j, ir, jr);
+            value = 0.0f;
+            double div = 0.0f;
+            float v,r;
+            
+            r = (1.0f-ir)*(1.0f-jr);
+            if (r>0.0 && getValue(i,j,v)) 
+            {
+                value += v*r;
+                div += r;
+            }
+            
+            r = (ir)*(1.0f-jr);
+            if (r>0.0 && getValue(i+1,j,v)) 
+            {
+                value += v*r;
+                div += r;
+            }
+            
+            r = (ir)*(jr);
+            if (r>0.0 && getValue(i+1,j+1,v)) 
+            {
+                value += v*r;
+                div += r;
+            }
+            
+            r = (1.0f-ir)*(jr);
+            if (r>0.0 && getValue(i,j+1,v)) 
+            {
+                value += v*r;
+                div += r;
+            }
+            
+            if (div != 0.0)
+            {
+                value /= div;
+                return true;
+            }
+            
+            value = 0.0;
+            return false;
+        }
+
+        virtual osg::BoundingSphere computeBound() const;
+
+    protected:
+
+        virtual ~Layer();
+
+        osg::ref_ptr<Locator>   _locator;
+        osg::Vec4               _defaultValue;
+
+};
+
+class OSGTERRAIN_EXPORT ImageLayer : public Layer
+{
+    public:
+
+        ImageLayer();
+
+        /** Copy constructor using CopyOp to manage deep vs shallow copy.*/
+        ImageLayer(const ImageLayer& imageLayer,const osg::CopyOp& copyop=osg::CopyOp::SHALLOW_COPY);
+        
+
+        void setImage(osg::Image* image);
+        osg::Image* getImage() { return _image.get(); }
+        const osg::Image* getImage() const { return _image.get(); }
+
+        virtual unsigned int getNumColumns() const { return _image.valid() ? _image->s() : 0; }
+        virtual unsigned int getNumRows() const { return _image.valid() ? _image->t() : 0;  }
+
+        virtual bool getValue(unsigned int i, unsigned int j, float& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec2& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec3& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec4& value) const;
+
+    protected:
+
+        virtual ~ImageLayer() {}
+
+        osg::ref_ptr<osg::Image> _image;
+
+};
+
+class OSGTERRAIN_EXPORT HeightFieldLayer : public Layer
+{
+    public:
+
+        HeightFieldLayer();
+
+        /** Copy constructor using CopyOp to manage deep vs shallow copy.*/
+        HeightFieldLayer(const HeightFieldLayer& hfLayer,const osg::CopyOp& copyop=osg::CopyOp::SHALLOW_COPY);
+        
+
+        void setHeightField(osg::HeightField* hf);
+        osg::HeightField* getHeightField() { return _heightField.get(); }
+        const osg::HeightField* getHeightField() const { return _heightField.get(); }
+
+        virtual unsigned int getNumColumns() const { return _heightField.valid() ? _heightField->getNumColumns() : 0; }
+        virtual unsigned int getNumRows() const { return _heightField.valid() ? _heightField->getNumRows() : 0;  }
+
+        virtual bool getValue(unsigned int i, unsigned int j, float& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec2& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec3& value) const;
+        virtual bool getValue(unsigned int i, unsigned int j, osg::Vec4& value) const;
+
+    protected:
+
+        virtual ~HeightFieldLayer() {}
+
+        osg::ref_ptr<osg::HeightField> _heightField;
+
+};
+
+}
+
+#endif
