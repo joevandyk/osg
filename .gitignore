@@ -1,0 +1,8 @@
+*.cmake
+Makefile
+CMakeFiles
+bin
+lib
+include/osg/Config
+include/OpenThreads/Config
+CMakeCache.txt
